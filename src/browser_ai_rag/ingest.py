@@ -43,7 +43,8 @@ def title_of(path: Path, pages: list[tuple[int | None, str]]) -> str:
     return path.stem
 
 
-def ingest_file(store: Store, embedder: Embedder, base: Path, path: Path, kind: str) -> int | None:
+def ingest_file(store: Store, embedder: Embedder, base: Path, path: Path, kind: str,
+                owner: str | None = None) -> int | None:
     rel = path.relative_to(base).as_posix()
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
     if store.document_sha(rel) == sha:
@@ -53,7 +54,9 @@ def ingest_file(store: Store, embedder: Embedder, base: Path, path: Path, kind: 
     if not chunks:
         return None
     vectors = embedder.passages([f"{h}\n{t}" for h, _, t in chunks])
-    return store.upsert_document(rel, title_of(path, pages), kind, sha, chunks, vectors)
+    if owner is None and kind == "note":
+        owner = store.owner_of(rel)  # 取り込み直しても書いた人を引き継ぐ
+    return store.upsert_document(rel, title_of(path, pages), kind, sha, chunks, vectors, owner)
 
 
 def build(settings: Settings, store: Store | None = None, embedder: Embedder | None = None) -> dict:

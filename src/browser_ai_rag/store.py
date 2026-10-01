@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS documents(
   path TEXT UNIQUE NOT NULL,     -- data/ からの相対パス
   title TEXT NOT NULL,
   kind TEXT NOT NULL,            -- doc（data/docs）か note（save_note で書いたもの）
+  owner TEXT,                    -- メモを書いた利用者（ログインありのとき）
   sha256 TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -67,6 +68,8 @@ class Store:
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(SCHEMA)
+        if "owner" not in [r[1] for r in self.db.execute("PRAGMA table_info(documents)")]:
+            self.db.execute("ALTER TABLE documents ADD COLUMN owner TEXT")  # 第16章までの保存先を引き継ぐ
         self._lock = threading.RLock()
         self._matrix: np.ndarray | None = None  # ベクトルをまとめた行列（変更があれば作り直す）
         self._ids: list[int] = []
@@ -77,15 +80,20 @@ class Store:
         row = self.db.execute("SELECT sha256 FROM documents WHERE path=?", (rel_path,)).fetchone()
         return row["sha256"] if row else None
 
+    def owner_of(self, rel_path: str) -> str | None:
+        row = self.db.execute("SELECT owner FROM documents WHERE path=?", (rel_path,)).fetchone()
+        return row["owner"] if row else None
+
     def upsert_document(self, rel_path: str, title: str, kind: str, sha: str,
-                        chunks: list[tuple[str, int | None, str]], vectors: np.ndarray) -> int:
+                        chunks: list[tuple[str, int | None, str]], vectors: np.ndarray,
+                        owner: str | None = None) -> int:
         with self._lock, self.db:
             old = self.db.execute("SELECT id FROM documents WHERE path=?", (rel_path,)).fetchone()
             if old:
                 self._delete(old["id"])
             cur = self.db.execute(
-                "INSERT INTO documents(path, title, kind, sha256, updated_at) VALUES(?,?,?,?,?)",
-                (rel_path, title, kind, sha, int(time.time())),
+                "INSERT INTO documents(path, title, kind, owner, sha256, updated_at) VALUES(?,?,?,?,?,?)",
+                (rel_path, title, kind, owner, sha, int(time.time())),
             )
             doc_id = cur.lastrowid
             for ord_, ((heading, page, text), vec) in enumerate(zip(chunks, vectors)):
@@ -113,7 +121,7 @@ class Store:
 
     def documents(self) -> list[sqlite3.Row]:
         return self.db.execute(
-            "SELECT d.id, d.path, d.title, d.kind, d.updated_at, COUNT(c.id) AS chunks "
+            "SELECT d.id, d.path, d.title, d.kind, d.owner, d.updated_at, COUNT(c.id) AS chunks "
             "FROM documents d LEFT JOIN chunks c ON c.doc_id=d.id GROUP BY d.id ORDER BY d.kind, d.title"
         ).fetchall()
 

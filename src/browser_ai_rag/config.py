@@ -24,6 +24,7 @@ class Settings:
     public_hosts: list[str] = field(default_factory=list)
     data_dir: Path = Path("data")
     hybrid_alpha: float = 0.3  # 全文検索の点数の重み（残りが埋め込み）。第13章の実測で決めた値
+    base_url: str = ""  # 公開する URL（例 https://book.mooma.style）。空ならログインなし（手元での開発用）
 
     @property
     def docs_dir(self) -> Path:
@@ -37,6 +38,10 @@ class Settings:
     def db_path(self) -> Path:
         return self.data_dir / "index" / "rag.db"
 
+    @property
+    def auth_db_path(self) -> Path:
+        return self.data_dir / "auth.db"
+
     @classmethod
     def from_env(cls) -> Settings:
         _load_dotenv(Path.cwd() / ".env")
@@ -47,4 +52,5 @@ class Settings:
             public_hosts=hosts,
             data_dir=Path(os.environ.get("RAG_DATA_DIR", "data")),
             hybrid_alpha=float(os.environ.get("RAG_HYBRID_ALPHA", "0.3")),
+            base_url=os.environ.get("RAG_BASE_URL", "").rstrip("/"),
         )

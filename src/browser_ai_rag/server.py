@@ -9,8 +9,10 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Annotated
 
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
@@ -20,6 +22,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .config import Settings
 from .embed import Embedder
+from .auth import AuthDB, Provider, add_login_routes, current_user
 from .ingest import ingest_file
 from .reqlog import RequestLog
 from .store import Store
@@ -30,12 +33,16 @@ INSTRUCTIONS = """サンプル商事の社内文書（規程・マニュアル�
 検索結果の断片だけでは足りないときは、read_document で前後を読んでください。
 利用者に「覚えておいて」「メモして」と頼まれたら save_note で保存します。"""
 
-mcp = MCPServer(
-    name="browser-ai-rag",
-    title="サンプル商事 社内文書検索",
-    instructions=INSTRUCTIONS,
-    version=__version__,
-)
+TOOLS: list[tuple] = []  # (関数, title, 注釈)。create_server でサーバーに登録する
+
+
+def tool(title: str, annotations: ToolAnnotations):
+    """道具の印。第16章までは @mcp.tool を直接使っていたが、ログインの有無でサーバーの作り方が
+    変わるので（第17章）、ここでは印だけ付けておき、サーバーを作るときにまとめて登録する。"""
+    def mark(fn):
+        TOOLS.append((fn, title, annotations))
+        return fn
+    return mark
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
@@ -83,6 +90,7 @@ class DocumentInfo(BaseModel):
     document_id: int
     title: str
     kind: str = Field(description="doc（社内文書）または note（メモ）")
+    owner: str | None = Field(default=None, description="メモを書いた利用者")
     chunks: int
     updated: str
 
@@ -90,7 +98,7 @@ class DocumentInfo(BaseModel):
 # ---------------------------------------------------------------- 道具
 
 
-@mcp.tool(title="社内文書を検索", annotations=READ_ONLY)
+@tool(title="社内文書を検索", annotations=READ_ONLY)
 def search_knowledge(
     query: Annotated[str, Field(description="調べたいこと。質問文のままでも、重要な語を並べてもよい。言い換え（例：残業→時間外労働）を足すと見つかりやすい")],
     limit: Annotated[int, Field(description="返す断片の数", ge=1, le=10)] = 5,
@@ -106,7 +114,7 @@ def search_knowledge(
     ]
 
 
-@mcp.tool(title="文書を読む", annotations=READ_ONLY)
+@tool(title="文書を読む", annotations=READ_ONLY)
 def read_document(
     document_id: Annotated[int, Field(description="search_knowledge か list_documents で得た文書の番号")],
     heading: Annotated[str | None, Field(description="この見出しを含む部分だけを読む（例：第5条）。省略すると全文")] = None,
@@ -125,17 +133,17 @@ def read_document(
                         next_offset=end if end < len(text) else None)
 
 
-@mcp.tool(title="文書の一覧", annotations=READ_ONLY)
+@tool(title="文書の一覧", annotations=READ_ONLY)
 def list_documents() -> list[DocumentInfo]:
     """検索できる文書とメモの一覧を返す。"""
     return [
-        DocumentInfo(document_id=d["id"], title=d["title"], kind=d["kind"], chunks=d["chunks"],
+        DocumentInfo(document_id=d["id"], title=d["title"], kind=d["kind"], owner=d["owner"], chunks=d["chunks"],
                      updated=datetime.fromtimestamp(d["updated_at"]).strftime("%Y-%m-%d %H:%M"))
         for d in state.store.documents()
     ]
 
 
-@mcp.tool(title="メモを保存", annotations=WRITE)
+@tool(title="メモを保存", annotations=WRITE)
 def save_note(
     title: Annotated[str, Field(description="メモの題名", min_length=1, max_length=100)],
     body: Annotated[str, Field(description="メモの本文（Markdown 可）", min_length=1, max_length=20000)],
@@ -146,13 +154,13 @@ def save_note(
     stem = datetime.now().strftime("%Y%m%d-%H%M%S-") + (re.sub(r'[\\/:*?"<>|\s]+', "_", title)[:40] or "note")
     path = folder / f"{stem}.md"
     path.write_text(f"# {title}\n\n{body}\n", encoding="utf-8")
-    doc_id = ingest_file(state.store, state.embedder, state.settings.data_dir, path, "note")
+    doc_id = ingest_file(state.store, state.embedder, state.settings.data_dir, path, "note", owner=current_user())
     d = next(x for x in state.store.documents() if x["id"] == doc_id)
-    return DocumentInfo(document_id=doc_id, title=d["title"], kind="note", chunks=d["chunks"],
+    return DocumentInfo(document_id=doc_id, title=d["title"], kind="note", owner=d["owner"], chunks=d["chunks"],
                         updated=datetime.fromtimestamp(d["updated_at"]).strftime("%Y-%m-%d %H:%M"))
 
 
-@mcp.tool(title="メモを削除", annotations=DELETE)
+@tool(title="メモを削除", annotations=DELETE)
 def delete_note(
     document_id: Annotated[int, Field(description="削除するメモの番号。社内文書（kind=doc）は削除できない")],
 ) -> str:
@@ -162,9 +170,39 @@ def delete_note(
         raise ToolError(f"文書番号 {document_id} は見つかりません。")
     if doc["kind"] != "note":
         raise ToolError("社内文書は削除できません。削除できるのは save_note で保存したメモだけです。")
+    if doc["owner"] and doc["owner"] != current_user():
+        raise ToolError("ほかの人が書いたメモは削除できません。")
     Path(state.settings.data_dir, doc["path"]).unlink(missing_ok=True)
     state.store.delete_document(document_id)
     return f"メモ「{doc['title']}」を削除しました。"
+
+
+# ---------------------------------------------------------------- サーバーを作る
+
+
+def create_server(settings: Settings) -> MCPServer:
+    """MCP サーバーを作る。settings.base_url があればログイン（OAuth）を付ける（第17章）。"""
+    auth_kwargs = {}
+    db = None
+    if settings.base_url:
+        db = AuthDB(settings.auth_db_path)
+        auth_kwargs = dict(
+            auth_server_provider=Provider(db, settings.base_url),
+            auth=AuthSettings(
+                issuer_url=settings.base_url,
+                resource_server_url=f"{settings.base_url}/mcp",
+                validate_token_resource=True,  # ほかのサーバー宛てに発行された合鍵は受け付けない
+                client_registration_options=ClientRegistrationOptions(enabled=True),  # 動的クライアント登録
+                revocation_options=RevocationOptions(enabled=True),
+            ),
+        )
+    mcp = MCPServer(name="browser-ai-rag", title="サンプル商事 社内文書検索", instructions=INSTRUCTIONS,
+                    version=__version__, **auth_kwargs)
+    for fn, title, annotations in TOOLS:
+        mcp.tool(title=title, annotations=annotations)(fn)
+    if db is not None:
+        add_login_routes(mcp, db)
+    return mcp
 
 
 # ---------------------------------------------------------------- HTTP
@@ -178,9 +216,11 @@ def build_app(settings: Settings, store: Store | None = None, embedder: Embedder
     受けるには、そのホスト名を許可リストに足す必要がある（第6章の落とし穴）。
     """
     configure(settings, store, embedder)
+    mcp = create_server(settings)
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
-        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", *settings.public_hosts],
+        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", *settings.public_hosts,
+                       *([urlparse(settings.base_url).netloc] if settings.base_url else [])],
         allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
     )
     app = mcp.streamable_http_app(transport_security=security, host=settings.host)

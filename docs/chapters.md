@@ -19,7 +19,7 @@ git checkout ch05
 | 12 読み込みとチャンク分割 | `ch16` | `readers.py`・`ingest.py`（KotobaCore で切り分け、変わったものだけ取り込む） | できた |
 | 13 埋め込みと検索 | `ch16` | `embed.py`（e5-small）・`store.py`（FTS5＋ベクトル、点数合成）・`tools/eval_search.py` | できた |
 | 14〜16 文書検索の道具 | `ch16` | 道具5つ（search_knowledge / read_document / list_documents / save_note / delete_note） | できた |
-| 17 認証 | `ch17` | OAuth 2.1・動的クライアント登録。相手を決め打ちしない | |
+| 17 認証 | `ch17` | `auth.py`：OAuth 2.1・動的クライアント登録・利用者ごとのログイン。`RAG_BASE_URL` を設定したときだけ有効 | できた |
 | 18 公開 | `ch18` | Azure Container Apps、VPS | |
 | 19 テストと評価 | `ch19` | 複数の AI で同じ質問を流す回帰テスト | |
 | 20〜22 メール | `ch20`〜`ch22` | `servers/mail`：受信の確認、返信（下書きと送信を分ける）、プロンプトインジェクション対策 | |
