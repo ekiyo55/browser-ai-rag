@@ -22,6 +22,20 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8000
     public_hosts: list[str] = field(default_factory=list)
+    data_dir: Path = Path("data")
+    hybrid_alpha: float = 0.3  # 全文検索の点数の重み（残りが埋め込み）。第13章の実測で決めた値
+
+    @property
+    def docs_dir(self) -> Path:
+        return self.data_dir / "docs"
+
+    @property
+    def notes_dir(self) -> Path:
+        return self.data_dir / "notes"
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "index" / "rag.db"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -31,4 +45,6 @@ class Settings:
             host=os.environ.get("RAG_HOST", "127.0.0.1"),
             port=int(os.environ.get("RAG_PORT", "8000")),
             public_hosts=hosts,
+            data_dir=Path(os.environ.get("RAG_DATA_DIR", "data")),
+            hybrid_alpha=float(os.environ.get("RAG_HYBRID_ALPHA", "0.3")),
         )

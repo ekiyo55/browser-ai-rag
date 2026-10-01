@@ -16,9 +16,9 @@ git checkout ch05
 | 8 そのほかの AI | `ch08` | 対応表の更新（docs/connect.md） | |
 | 9 Inspector とログ | `ch09` | リクエストのログ（`reqlog.py`）、クライアントごとの違いの見分け方 | ログはできた |
 | 10 型ヒントとツール定義 | `ch10` | 引数の説明と型 | |
-| 12 読み込みとチャンク分割 | `ch12` | `data/docs/` の文書を読む | |
-| 13 埋め込みと検索 | `ch13` | ベクトル検索とハイブリッド検索 | |
-| 14〜16 文書検索の道具 | `ch14`〜`ch16` | 道具の設計、search_knowledge / read_document、save_note | |
+| 12 読み込みとチャンク分割 | `ch16` | `readers.py`・`ingest.py`（KotobaCore で切り分け、変わったものだけ取り込む） | できた |
+| 13 埋め込みと検索 | `ch16` | `embed.py`（e5-small）・`store.py`（FTS5＋ベクトル、点数合成）・`tools/eval_search.py` | できた |
+| 14〜16 文書検索の道具 | `ch16` | 道具5つ（search_knowledge / read_document / list_documents / save_note / delete_note） | できた |
 | 17 認証 | `ch17` | OAuth 2.1・動的クライアント登録。相手を決め打ちしない | |
 | 18 公開 | `ch18` | Azure Container Apps、VPS | |
 | 19 テストと評価 | `ch19` | 複数の AI で同じ質問を流す回帰テスト | |
@@ -30,4 +30,4 @@ git checkout ch05
 | 29 サーバーを並べる | `ch29` | 認証の共通化（`common/`）、道具の数の予算 | |
 | 30〜33 チームで使う | `ch30`〜`ch33` | SharePoint、組織プラン、Entra ID、運用と安全 | |
 
-第1〜4章と第11章は考え方の章なので、コードはありません。
+第1〜4章と第11章は考え方の章なので、コードはありません。第12〜16章は一つの作業としてまとめて作ったので、タグは `ch16` だけです。

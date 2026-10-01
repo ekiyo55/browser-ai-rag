@@ -8,6 +8,12 @@ requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.2,<3",
     "uvicorn>=0.30",
+    "kotobacore>=1.1",      # 日本語の切り分け（第12章）
+    "fastembed>=0.8",       # 埋め込みモデルを ONNX で動かす（第13章）
+    "numpy>=2",
+    "pypdfium2>=4",         # PDF
+    "python-docx>=1.1",     # Word
+    "openpyxl>=3.1",        # Excel
 ]
 
 [dependency-groups]

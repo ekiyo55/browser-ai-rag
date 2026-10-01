@@ -2,8 +2,12 @@
 
 from starlette.testclient import TestClient
 
+import pytest
+
 from browser_ai_rag.config import Settings
 from browser_ai_rag.server import build_app
+
+from conftest import FakeEmbedder
 
 INIT = {
     "jsonrpc": "2.0",
@@ -14,8 +18,13 @@ INIT = {
 HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
 
 
+@pytest.fixture(autouse=True)
+def _tmp_data(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # 既定の data/ を一時フォルダに作らせる
+
+
 def _post(settings: Settings, host: str) -> int:
-    with TestClient(build_app(settings)) as client:
+    with TestClient(build_app(settings, embedder=FakeEmbedder())) as client:
         return client.post("/mcp", json=INIT, headers={**HEADERS, "Host": host}).status_code
 
 
