@@ -13,13 +13,14 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from . import __version__
 from .config import Settings
+from .reqlog import RequestLog
 
 INSTRUCTIONS = """これは本書のサンプル用 MCP サーバーです。
 いまは動作確認用のツールだけを持っています。"""
 
 mcp = MCPServer(
     name="browser-ai-rag",
-    title="ブラウザのAIに社内文書を読ませる（サンプル）",
+    title="ブラウザのAIが社内で働きだす（サンプル）",
     instructions=INSTRUCTIONS,
     version=__version__,
 )
@@ -57,4 +58,5 @@ def build_app(settings: Settings):
         allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", *settings.public_hosts],
         allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
     )
-    return mcp.streamable_http_app(transport_security=security, host=settings.host)
+    app = mcp.streamable_http_app(transport_security=security, host=settings.host)
+    return RequestLog(app)  # /mcp へのリクエストを1行ずつ記録する（第9章）
