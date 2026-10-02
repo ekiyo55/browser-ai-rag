@@ -48,6 +48,8 @@ class Hit:
     page: int | None
     text: str
     score: float
+    kind: str = "doc"
+    owner: str | None = None
 
 
 def normalize(s: str) -> str:
@@ -171,13 +173,13 @@ class Store:
         hits: list[Hit] = []
         for i in order:
             row = self.db.execute(
-                "SELECT c.id, c.doc_id, d.title, c.heading, c.page, c.text FROM chunks c "
+                "SELECT c.id, c.doc_id, d.title, c.heading, c.page, c.text, d.kind, d.owner FROM chunks c "
                 "JOIN documents d ON d.id=c.doc_id WHERE c.id=?", (ids[i],)
             ).fetchone()
             if doc_id is not None and row["doc_id"] != doc_id:
                 continue
             hits.append(Hit(row["id"], row["doc_id"], row["title"], row["heading"], row["page"], row["text"],
-                            round(float(score[i]), 3)))
+                            round(float(score[i]), 3), row["kind"], row["owner"]))
             if len(hits) >= limit:
                 break
         return hits

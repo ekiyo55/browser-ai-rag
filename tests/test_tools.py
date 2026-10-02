@@ -59,7 +59,8 @@ async def test_save_search_and_delete_note(server, mcp):
         assert saved["kind"] == "note"
         assert list(settings.notes_dir.glob("*.md"))
         hits = (await c.call_tool("search_knowledge", {"query": "物流会社 訪問 10月14日"})).structured_content["result"]
-        assert any(h["document_id"] == saved["document_id"] for h in hits)
+        note_hit = next(h for h in hits if h["document_id"] == saved["document_id"])
+        assert note_hit["kind"] == "note" and note_hit["cite"].startswith("メモ「来週の訪問」")
         msg = await c.call_tool("delete_note", {"document_id": saved["document_id"]})
         assert "削除しました" in msg.content[0].text
     assert not list(settings.notes_dir.glob("*.md"))

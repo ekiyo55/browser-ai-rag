@@ -77,6 +77,8 @@ class SearchHit(BaseModel):
     text: str = Field(description="見つかった断片の本文")
     score: float = Field(description="0〜1。大きいほど質問に近い")
     cite: str = Field(description="回答に添える出典の書き方")
+    kind: str = Field(description="doc（社内文書）か note（利用者が残したメモ）。メモは社内の正式な文書ではない")
+    owner: str | None = Field(default=None, description="メモを書いた利用者")
 
 
 class DocumentText(BaseModel):
@@ -108,8 +110,10 @@ def search_knowledge(
     hits = state.store.search(query, state.embedder.query(query), limit=limit,
                               alpha=state.settings.hybrid_alpha, doc_id=document_id)
     return [
-        SearchHit(document_id=h.doc_id, title=h.title, heading=h.heading, page=h.page, text=h.text,
-                  score=h.score, cite=f"{h.title} {h.heading}" + (f"（p.{h.page}）" if h.page else ""))
+        SearchHit(document_id=h.doc_id, title=h.title, heading=h.heading, page=h.page, text=h.text, score=h.score,
+                  kind=h.kind, owner=h.owner,
+                  cite=(f"メモ「{h.title}」（書き手 {h.owner or '不明'}）" if h.kind == "note"
+                        else f"{h.title} {h.heading}" + (f"（p.{h.page}）" if h.page else "")))
         for h in hits
     ]
 
