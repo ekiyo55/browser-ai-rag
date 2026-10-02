@@ -42,7 +42,8 @@ INSTRUCTIONS = """利用者本人の出勤・退勤・休憩を打刻し、本�
 打刻（punch）は、利用者がはっきり頼んだときだけ行ってください。あいさつや雑談から推測して打刻しないこと。
 打刻の時刻はサーバーの時計で決まります。「9時に出勤したことにして」のように過去の時刻を頼まれたら、punch は使わず、
 request_correction で理由を添えて修正を申請してください（管理者が承認すると反映されます）。
-ほかの人の分は打刻できません。"""
+ほかの人の分は打刻できません。
+管理者のアカウント（承認する役目の管理用アカウント）では、打刻も修正の申請もできません。管理者自身の勤怠は、個人のアカウントでつけます。"""
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
@@ -115,6 +116,15 @@ def _me() -> str:
     if state.settings.base_url:   # 公開しているのにログインの情報がない：通さない
         raise ToolError("ログインしていないので、打刻できません。")
     return state.tc.dev_user
+
+
+def _worker() -> str:
+    """打刻や申請をする人。管理用のアカウントには勤怠がないので、ここで断る（第24章）。"""
+    user = _me()
+    if user in state.tc.admins:
+        raise ToolError(f"{user} は管理用のアカウントなので、打刻や修正の申請はできません。"
+                        "ご自身の勤怠は、個人のアカウントでログインしてつけてください。")
+    return user
 
 
 def _via() -> str:
@@ -321,7 +331,7 @@ def punch(
 ) -> PunchResult:
     """ログインしている本人の打刻をする。時刻はサーバーの時計で決まり、指定できない。
     利用者がはっきり頼んだときだけ呼ぶこと。過去の時刻で打ちたいときは request_correction を使う。"""
-    user = _me()
+    user = _worker()
     with state.lock:
         status, last = _status(user)
         if kind not in ALLOWED_NEXT[status]:
@@ -387,7 +397,7 @@ def request_correction(
     replaces_punch_id: Annotated[int | None, Field(description="間違った打刻を置き換えるときは、その番号。打ち忘れの追加なら省略")] = None,
 ) -> Correction:
     """打ち忘れや打ち間違いの修正を申請する。すぐには反映されず、管理者が承認したときに反映される。"""
-    user = _me()
+    user = _worker()
     try:
         ts = int(datetime.strptime(at.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=_tz()).timestamp())
     except ValueError:

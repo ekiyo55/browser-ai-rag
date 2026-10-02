@@ -110,11 +110,21 @@ async def test_correction_flow(env):
     assert voided is not None                                                   # 古い打刻は消さずに印をつける
 
 
-async def test_admin_cannot_approve_own(env):
+async def test_admin_account_does_not_punch(env):
+    """管理用のアカウントには勤怠がない。打刻も申請もできない（実機で、自分の申請を誰も承認できなくなった）。"""
     _, who = env
     who["name"] = "boss"
+    r = await call("punch", {"kind": "in"})
+    assert r.is_error and "管理用のアカウント" in r.content[0].text
+    r = await call("request_correction", {"kind": "in", "at": "2026-10-01 08:00", "reason": "打ち忘れ"})
+    assert r.is_error and "管理用のアカウント" in r.content[0].text
+
+
+async def test_admin_cannot_approve_own(env):
+    """管理者の一覧を後から変えた場合などに残った、自分の申請は承認できない。"""
     await call("punch", {"kind": "in"})
     req = (await call("request_correction", {"kind": "in", "at": "2026-10-01 08:00", "reason": "打ち忘れ"})).structured_content
+    tc.state.tc.admins.append("yamada")       # yamada が後から管理者になった
     r = await call("decide_correction", {"correction_id": req["correction_id"], "approve": True})
     assert r.is_error and "自分の申請" in r.content[0].text
 
