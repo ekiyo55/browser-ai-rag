@@ -283,20 +283,40 @@ def add_login_routes(mcp, db: AuthDB) -> None:
 
 
 def main() -> None:
-    """uv run python -m browser_ai_rag.auth add <ユーザー名> [表示名]"""
+    """uv run python -m browser_ai_rag.auth add <ユーザー名> [表示名]
+    uv run python -m browser_ai_rag.auth sessions          どの AI に、誰がログインしているか
+    uv run python -m browser_ai_rag.auth logout <ユーザー名>  その人の合鍵をすべて無効にする（第24章）"""
     from .config import Settings
 
-    if len(sys.argv) < 3 or sys.argv[1] != "add":
-        print("使い方: python -m browser_ai_rag.auth add <ユーザー名> [表示名]")
+    usage = "使い方: python -m browser_ai_rag.auth add <ユーザー名> [表示名] | sessions | logout <ユーザー名>"
+    if len(sys.argv) < 2 or sys.argv[1] not in ("add", "sessions", "logout"):
+        print(usage)
+        sys.exit(2)
+    db = AuthDB(Settings.from_env().auth_db_path)
+    if sys.argv[1] == "sessions":
+        db.purge()
+        rows = db.q("SELECT t.username, t.client_id, c.info, t.resource, t.expires_at FROM oauth_tokens t "
+                    "LEFT JOIN oauth_clients c ON c.client_id = t.client_id WHERE t.kind='refresh' ORDER BY t.username")
+        for r in rows:
+            name = json.loads(r["info"]).get("client_name") if r["info"] else None
+            until = time.strftime("%Y-%m-%d %H:%M", time.localtime(r["expires_at"]))
+            print(f"{r['username']:<12} {name or r['client_id']:<24} {urlparse(r['resource'] or '').path:<16} {until} まで")
+        print(f"（{len(rows)} 件）")
+        return
+    if len(sys.argv) < 3:
+        print(usage)
         sys.exit(2)
     username = sys.argv[2]
+    if sys.argv[1] == "logout":
+        n = db.x("DELETE FROM oauth_tokens WHERE username=?", (username,))
+        print(f"利用者 {username} の合鍵と控えを {n} 件消しました。どの AI からも、ログインし直すまで使えません。")
+        return
     password = sys.stdin.readline().strip() if not sys.stdin.isatty() else getpass.getpass("パスワード: ")
     if len(password) < 12:
         print("パスワードは12文字以上にしてください。")
         sys.exit(1)
-    AuthDB(Settings.from_env().auth_db_path).add_user(username, password, sys.argv[3] if len(sys.argv) > 3 else None)
+    db.add_user(username, password, sys.argv[3] if len(sys.argv) > 3 else None)
     print(f"利用者 {username} を登録しました。")
-
 
 if __name__ == "__main__":
     main()

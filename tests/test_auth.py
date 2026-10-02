@@ -99,3 +99,11 @@ def test_login_page_names_the_mail_purpose():
     assert purpose_of("https://book.example.com/mail/mcp")[0] == "メール"
     assert "メールを送ろう" in purpose_of("https://book.example.com/mail/mcp")[1]
     assert purpose_of("https://book.example.com/mcp")[0] == "社内文書検索"
+
+
+def test_logout_revokes_every_ai(client, data_dir):
+    """管理者がサーバーで logout すると、その人がどの AI でログインしていても使えなくなる。"""
+    yamada = login(client, "yamada", "yamada-password-123")
+    AuthDB(Settings(data_dir=data_dir).auth_db_path).x("DELETE FROM oauth_tokens WHERE username=?", ("yamada",))
+    r = client.post("/mcp", json={}, headers={**H, "Authorization": f"Bearer {yamada}"})
+    assert r.status_code == 401
