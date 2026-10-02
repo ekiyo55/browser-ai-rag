@@ -72,3 +72,15 @@ async def test_modes_expose_different_tools():
         assert {t.name for t in (await c.list_tools()).tools} == {"sales_summary", "deal_summary", "list_deals", "list_values"}
     async with Client(create_count_server(Settings(), "sql")) as c:
         assert {t.name for t in (await c.list_tools()).tools} == {"run_sql"}
+
+
+async def test_no_records_is_not_zero(raw):
+    """記録のない期間を「0円」と答えさせない（実機で「前年同月比 9,990,000円の増加」と答えた）。"""
+    before = (await call("sales_summary", {"date_from": "2025-09", "date_to": "2025-09"})).structured_content
+    assert before["total"] == 0 and before["coverage"].startswith("記録なし")
+    part = (await call("sales_summary", {"date_from": "2025-09", "date_to": "2025-10"})).structured_content
+    assert part["coverage"].startswith("一部だけ")
+    full = (await call("sales_summary", {"date_from": "2026-09", "date_to": "2026-09"})).structured_content
+    assert full["coverage"] == "期間のすべてに記録あり"
+    month = (await call("sales_summary", {"date_from": "2026-10", "date_to": "2026-10"})).structured_content
+    assert month["coverage"].startswith("一部だけ")              # 今日（10/2）より先は、まだ起きていない

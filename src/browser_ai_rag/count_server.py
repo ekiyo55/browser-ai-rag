@@ -167,6 +167,8 @@ class SalesAnswer(BaseModel):
     rows: list[Row]
     total: int
     total_text: str
+    records: str = Field(description="売上の記録がある期間。この外の期間は「0円」ではなく「記録がない」")
+    coverage: str = Field(description="指定した期間に記録があるか。「記録なし」なら、0円と言わず比べられないと伝えること")
     as_of: str = Field(description="サーバーの今日の日付")
 
 
@@ -245,8 +247,17 @@ def sales_summary(
         cond["担当者"] = own
     if prod:
         cond["商品"] = prod
+    # 記録がある期間：最初の記録の月の初めから、今日まで（今日より先は、まだ起きていない）
+    first = state.db.execute("SELECT MIN(booked_on) FROM sales").fetchone()[0][:8] + "01"
+    last = state.today().isoformat()
+    if b < first or a > last:
+        coverage = f"記録なし（売上の記録は {first}〜{last} の分だけ。この期間の売上は0円ではなく、わからない）"
+    elif a < first or b > last:
+        coverage = f"一部だけ（記録は {first}〜{last} の分だけ。期間の残りは数えられていない）"
+    else:
+        coverage = "期間のすべてに記録あり"
     return SalesAnswer(rule=SALES_RULE, conditions=cond, rows=rows, total=total, total_text=_yen(total),
-                       as_of=state.today().isoformat())
+                       records=f"{first}〜{last}", coverage=coverage, as_of=state.today().isoformat())
 
 
 @tool("案件を集計する", "tools")
@@ -363,6 +374,8 @@ _sql_lock = threading.Lock()
 
 
 def _run_sql(sql: str) -> SqlAnswer:
+    if os.environ.get("COUNT_LOG_SQL") == "1":   # 実験のときだけ、AI が書いた SQL を記録する（架空のデータなので）
+        logging.getLogger("count").info("run_sql: %s", " ".join(sql.split()))
     deadline = time.monotonic() + 2.0
     state.db.set_authorizer(_authorizer)                                   # 読む以外の操作は断る
     state.db.set_progress_handler(lambda: int(time.monotonic() > deadline), 10_000)  # 2秒で打ち切る
