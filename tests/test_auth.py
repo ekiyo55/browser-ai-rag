@@ -107,3 +107,17 @@ def test_logout_revokes_every_ai(client, data_dir):
     AuthDB(Settings(data_dir=data_dir).auth_db_path).x("DELETE FROM oauth_tokens WHERE username=?", ("yamada",))
     r = client.post("/mcp", json={}, headers={**H, "Authorization": f"Bearer {yamada}"})
     assert r.status_code == 401
+
+
+def test_double_submit_after_login_is_not_an_error(client):
+    """ログインのボタンを二度押ししても、「期限切れ」ではなく「済んでいます」と出す（実機で起きた）。"""
+    reg = client.post("/register", json={"client_name": "テスト用AI", "redirect_uris": [CALLBACK],
+                                         "token_endpoint_auth_method": "none"}).json()
+    r = client.get("/authorize", params={"response_type": "code", "client_id": reg["client_id"], "redirect_uri": CALLBACK,
+                                         "state": "s", "code_challenge": "x" * 43, "code_challenge_method": "S256"},
+                   follow_redirects=False)
+    key = urllib.parse.parse_qs(urllib.parse.urlparse(r.headers["location"]).query)["req"][0]
+    form = {"req": key, "username": "yamada", "password": "yamada-password-123"}
+    assert client.post("/login", data=form, follow_redirects=False).status_code == 302
+    again = client.post("/login", data=form, follow_redirects=False)
+    assert again.status_code == 200 and "済んでいます" in again.text

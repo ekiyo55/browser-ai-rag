@@ -223,12 +223,20 @@ def _page(key: str, client_name: str | None, error: str = "", resource: str | No
 <style>body{{font-family:sans-serif;max-width:420px;margin:48px auto;padding:0 16px}}
 input,button{{width:100%;padding:10px;margin:6px 0;font-size:16px;box-sizing:border-box}}</style></head><body>
 <h1>サンプル商事 {html.escape(service)}</h1>{who}{err}
-<form method="post" action="/login"><input type="hidden" name="req" value="{html.escape(key)}">
+<form method="post" action="/login" onsubmit="this.querySelector('button').disabled=true"><input type="hidden" name="req" value="{html.escape(key)}">
 <label>ユーザー名<input name="username" autocomplete="username" required autofocus></label>
 <label>パスワード<input type="password" name="password" autocomplete="current-password" required></label>
 <button type="submit">許可してログイン</button></form></body></html>"""
     # 他のサイトの枠の中に表示させない（パスワードを盗む細工を防ぐ）
     return HTMLResponse(body, headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"})
+
+
+DONE = '"done"'  # ログインが済んだ印。同じ画面からもう一度送られても、期限切れとは言わない
+
+
+def _done_page() -> HTMLResponse:
+    return HTMLResponse("<!doctype html><meta charset='utf-8'><p>ログインは済んでいます。この画面は閉じてかまいません。</p>",
+                        headers={"Cache-Control": "no-store"})
 
 
 def add_login_routes(mcp, db: AuthDB) -> None:
@@ -249,6 +257,8 @@ def add_login_routes(mcp, db: AuthDB) -> None:
         p = pending(req.query_params.get("req", ""))
         if p is None:
             return HTMLResponse("ログインの期限が切れました。AI サービスの画面から接続をやり直してください。", 400)
+        if p["params"] == DONE:
+            return _done_page()
         return _page(req.query_params["req"], client_name(p["client_id"]), resource=_resource(p))
 
     @mcp.custom_route("/login", methods=["POST"])
@@ -258,6 +268,8 @@ def add_login_routes(mcp, db: AuthDB) -> None:
         p = pending(key)
         if p is None:
             return HTMLResponse("ログインの期限が切れました。AI サービスの画面から接続をやり直してください。", 400)
+        if p["params"] == DONE:   # ボタンの二度押しなど（実機で起きた）
+            return _done_page()
         lock = db.q("SELECT count, until FROM login_fail WHERE ip=?", (ip,))
         if lock and lock[0]["count"] >= LOCK_AFTER and lock[0]["until"] > time.time():
             return _page(key, client_name(p["client_id"]), "失敗が続いたため、15分間ロックしています。", _resource(p))
@@ -267,7 +279,7 @@ def add_login_routes(mcp, db: AuthDB) -> None:
                  (ip, int(time.time()) + LOCK_SECONDS))
             return _page(key, client_name(p["client_id"]), "ユーザー名かパスワードが違います。", _resource(p))
         db.x("DELETE FROM login_fail WHERE ip=?", (ip,))
-        db.x("DELETE FROM oauth_pending WHERE key=?", (key,))
+        db.x("UPDATE oauth_pending SET params=? WHERE key=?", (DONE, key))   # 消さずに「済」の印をつける
         params = AuthorizationParams.model_validate_json(p["params"])
         code = secrets.token_urlsafe(32)
         ac = AuthorizationCode(code=code, scopes=params.scopes or [], expires_at=time.time() + 300,
