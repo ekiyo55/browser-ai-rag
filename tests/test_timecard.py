@@ -126,3 +126,15 @@ async def test_minutes_match_what_is_shown(env):
     clock.t += 135; await call("punch", {"kind": "out"})
     rec = (await call("my_records")).structured_content["result"][0]
     assert (rec["start"], rec["end"], rec["worked_minutes"]) == ("15:34", "15:37", 3)
+
+
+async def test_correction_list_tells_who_is_looking(env):
+    """一覧の答えに、見ている人・管理者かどうか・承認できる人を入れる（AI が推測で補わないように。実機で起きた）。"""
+    _, who = env
+    await call("punch", {"kind": "in"})
+    await call("request_correction", {"kind": "in", "at": "2026-10-01 08:00", "reason": "打ち忘れ"})
+    mine = (await call("list_corrections")).structured_content
+    assert mine["viewer"] == "yamada" and not mine["viewer_is_admin"] and mine["approvers"] == ["boss"]
+    who["name"] = "boss"
+    boss = (await call("list_corrections")).structured_content
+    assert boss["viewer_is_admin"] and len(boss["corrections"]) == 1

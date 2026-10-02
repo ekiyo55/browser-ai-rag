@@ -283,6 +283,13 @@ class Correction(BaseModel):
     comment: str | None = None
 
 
+class CorrectionList(BaseModel):
+    viewer: str = Field(description="いま見ている人（ログインの情報から）")
+    viewer_is_admin: bool = Field(description="見ている人が管理者か。管理者なら全員分、そうでなければ本人分だけが入る")
+    approvers: list[str] = Field(description="申請を承認できる人（管理者）。自分の申請は自分以外の管理者が承認する")
+    corrections: list[Correction]
+
+
 def _correction(r: sqlite3.Row) -> Correction:
     return Correction(correction_id=r["id"], username=r["username"], kind=KIND_JA[r["kind"]], at=_fmt(r["at"]),
                       replaces_punch_id=r["replaces"], reason=r["reason"], status=r["status"],
@@ -402,8 +409,9 @@ def request_correction(
 @tool("修正の申請を見る", READ_ONLY)
 def list_corrections(
     status: Annotated[Literal["pending", "approved", "rejected", "all"], Field(description="pending=承認待ち")] = "pending",
-) -> list[Correction]:
-    """修正の申請を返す。管理者には全員の分、それ以外の人には本人の分だけ。"""
+) -> CorrectionList:
+    """修正の申請を返す。管理者には全員の分、それ以外の人には本人の分だけ。
+    見ている人・管理者かどうか・承認できる人も返すので、推測で答えないこと。"""
     me = _me()
     sql, args = "SELECT * FROM corrections WHERE 1=1", []
     if me not in state.tc.admins:
@@ -412,7 +420,8 @@ def list_corrections(
     if status != "all":
         sql += " AND status=?"
         args.append(status)
-    return [_correction(r) for r in state.db.execute(sql + " ORDER BY id DESC LIMIT 50", args)]
+    return CorrectionList(viewer=me, viewer_is_admin=me in state.tc.admins, approvers=list(state.tc.admins),
+                          corrections=[_correction(r) for r in state.db.execute(sql + " ORDER BY id DESC LIMIT 50", args)])
 
 
 @tool("修正の申請を承認・却下する", DECIDE)
