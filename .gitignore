@@ -7,3 +7,4 @@ dist/
 *.egg-info/
 data/index/
 data/notes/
+data/sales/
