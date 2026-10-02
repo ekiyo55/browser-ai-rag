@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import (
@@ -201,14 +202,26 @@ def _client_ip(req: Request) -> str:
             or (req.client.host if req.client else "?"))
 
 
-def _page(key: str, client_name: str | None, error: str = "") -> HTMLResponse:
-    who = f"<p><b>{html.escape(client_name)}</b> が、あなたの代わりに社内文書を検索しようとしています。</p>" if client_name else ""
+# 合鍵の宛先（resource）ごとに、利用者に見せる「何をさせる鍵か」。ログインを共通にするなら、ここを必ず分ける（第29章）
+PURPOSES = {
+    "/mcp": ("社内文書検索", "あなたの代わりに、社内文書を検索し、メモを残そうとしています。"),
+    "/mail/mcp": ("メール", "あなたの受信箱を読み、返信の下書きを作り、メールを送ろうとしています。"),
+}
+
+
+def purpose_of(resource: str | None) -> tuple[str, str]:
+    return PURPOSES.get(urlparse(resource or "").path, ("社内ツール", "あなたの代わりに、社内のツールを使おうとしています。"))
+
+
+def _page(key: str, client_name: str | None, error: str = "", resource: str | None = None) -> HTMLResponse:
+    service, does = purpose_of(resource)
+    who = f"<p><b>{html.escape(client_name)}</b> が、{html.escape(does)}</p>" if client_name else ""
     err = f"<p style='color:#c0392b'>{html.escape(error)}</p>" if error else ""
     body = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>ログイン</title>
 <style>body{{font-family:sans-serif;max-width:420px;margin:48px auto;padding:0 16px}}
 input,button{{width:100%;padding:10px;margin:6px 0;font-size:16px;box-sizing:border-box}}</style></head><body>
-<h1>サンプル商事 社内文書検索</h1>{who}{err}
+<h1>サンプル商事 {html.escape(service)}</h1>{who}{err}
 <form method="post" action="/login"><input type="hidden" name="req" value="{html.escape(key)}">
 <label>ユーザー名<input name="username" autocomplete="username" required autofocus></label>
 <label>パスワード<input type="password" name="password" autocomplete="current-password" required></label>
@@ -222,6 +235,9 @@ def add_login_routes(mcp, db: AuthDB) -> None:
         rows = db.q("SELECT client_id, params FROM oauth_pending WHERE key=? AND expires_at>?", (key, int(time.time())))
         return rows[0] if rows else None
 
+    def _resource(p) -> str | None:
+        return AuthorizationParams.model_validate_json(p["params"]).resource
+
     def client_name(client_id: str) -> str:
         rows = db.q("SELECT info FROM oauth_clients WHERE client_id=?", (client_id,))
         info = json.loads(rows[0]["info"]) if rows else {}
@@ -232,7 +248,7 @@ def add_login_routes(mcp, db: AuthDB) -> None:
         p = pending(req.query_params.get("req", ""))
         if p is None:
             return HTMLResponse("ログインの期限が切れました。AI サービスの画面から接続をやり直してください。", 400)
-        return _page(req.query_params["req"], client_name(p["client_id"]))
+        return _page(req.query_params["req"], client_name(p["client_id"]), resource=_resource(p))
 
     @mcp.custom_route("/login", methods=["POST"])
     async def login_post(req: Request) -> Response:
@@ -243,12 +259,12 @@ def add_login_routes(mcp, db: AuthDB) -> None:
             return HTMLResponse("ログインの期限が切れました。AI サービスの画面から接続をやり直してください。", 400)
         lock = db.q("SELECT count, until FROM login_fail WHERE ip=?", (ip,))
         if lock and lock[0]["count"] >= LOCK_AFTER and lock[0]["until"] > time.time():
-            return _page(key, client_name(p["client_id"]), "失敗が続いたため、15分間ロックしています。")
+            return _page(key, client_name(p["client_id"]), "失敗が続いたため、15分間ロックしています。", _resource(p))
         username = str(form.get("username", "")).strip()
         if not db.verify_user(username, str(form.get("password", ""))):
             db.x("INSERT INTO login_fail VALUES(?,1,?) ON CONFLICT(ip) DO UPDATE SET count=count+1, until=excluded.until",
                  (ip, int(time.time()) + LOCK_SECONDS))
-            return _page(key, client_name(p["client_id"]), "ユーザー名かパスワードが違います。")
+            return _page(key, client_name(p["client_id"]), "ユーザー名かパスワードが違います。", _resource(p))
         db.x("DELETE FROM login_fail WHERE ip=?", (ip,))
         db.x("DELETE FROM oauth_pending WHERE key=?", (key,))
         params = AuthorizationParams.model_validate_json(p["params"])

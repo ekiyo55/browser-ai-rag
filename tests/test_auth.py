@@ -46,6 +46,7 @@ def login(c: TestClient, username: str, password: str) -> str:
     key = urllib.parse.parse_qs(urllib.parse.urlparse(r.headers["location"]).query)["req"][0]
     page = c.get(f"/login?req={key}")
     assert "テスト用AI" in page.text  # 誰に鍵を渡すのかがログイン画面に出る
+    assert "社内文書を検索" in page.text  # 何をさせる鍵なのかも出る（/mcp 宛て）
     r = c.post("/login", data={"req": key, "username": username, "password": password}, follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"].startswith(CALLBACK)
     code = urllib.parse.parse_qs(urllib.parse.urlparse(r.headers["location"]).query)["code"][0]
@@ -91,3 +92,10 @@ def test_login_and_owned_notes(client):
     assert denied["isError"] and "ほかの人が書いたメモ" in denied["content"][0]["text"]
     ok = call(client, yamada, "delete_note", {"document_id": saved["document_id"]})
     assert not ok["isError"]
+
+
+def test_login_page_names_the_mail_purpose():
+    from browser_ai_rag.auth import purpose_of
+    assert purpose_of("https://book.example.com/mail/mcp")[0] == "メール"
+    assert "メールを送ろう" in purpose_of("https://book.example.com/mail/mcp")[1]
+    assert purpose_of("https://book.example.com/mcp")[0] == "社内文書検索"
