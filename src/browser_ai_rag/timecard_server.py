@@ -174,7 +174,8 @@ def _punches(user: str, since: int, until: int) -> list[sqlite3.Row]:
 
 
 def _shifts(user: str, since: int, until: int) -> list[Shift]:
-    """打刻を時刻の順に並べ、出勤から退勤までを1回の勤務にまとめる。日をまたいでも出勤した日の勤務にする。"""
+    """打刻を時刻の順に並べ、出勤から退勤までを1回の勤務にまとめる。日をまたいでも出勤した日の勤務にする。
+    時間は、画面に出す時刻（分まで）どうしの差で数える。秒で数えると、表示と合わなくなる（第23章）。"""
     rows = _punches(user, since - 24 * 3600, until + 24 * 3600)
     shifts: list[dict] = []
     cur: dict | None = None
@@ -188,7 +189,7 @@ def _shifts(user: str, since: int, until: int) -> list[Shift]:
         cur = None
 
     for r in rows:
-        k, at = r["kind"], r["at"]
+        k, at = r["kind"], r["at"] - r["at"] % 60   # 秒は切り捨てて、分の単位で数える
         if k == "in":
             close("退勤の打刻がありません")
             cur = {"start": at, "end": None, "breaks": 0, "break_from": None, "problem": None}

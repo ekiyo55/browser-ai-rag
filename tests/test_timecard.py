@@ -117,3 +117,12 @@ async def test_admin_cannot_approve_own(env):
     req = (await call("request_correction", {"kind": "in", "at": "2026-10-01 08:00", "reason": "打ち忘れ"})).structured_content
     r = await call("decide_correction", {"correction_id": req["correction_id"], "approve": True})
     assert r.is_error and "自分の申請" in r.content[0].text
+
+
+async def test_minutes_match_what_is_shown(env):
+    """15:34:48 出勤・15:37:03 退勤は、表示どおり 15:34〜15:37 の3分と数える（秒で数えると2分になる）。"""
+    clock, _ = env
+    clock.t += 15 * 3600 + 34 * 60 + 48 - 9 * 3600; await call("punch", {"kind": "in"})
+    clock.t += 135; await call("punch", {"kind": "out"})
+    rec = (await call("my_records")).structured_content["result"][0]
+    assert (rec["start"], rec["end"], rec["worked_minutes"]) == ("15:34", "15:37", 3)
