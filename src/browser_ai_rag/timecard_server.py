@@ -128,12 +128,16 @@ def _worker() -> str:
 
 
 def _via() -> str:
-    """どの AI からの呼び出しか（動的クライアント登録で AI が名乗った名前）。"""
+    return _via_from(state.auth)
+
+
+def _via_from(auth: AuthDB | None) -> str:
+    """どの AI からの呼び出しか（動的クライアント登録で AI が名乗った名前）。予定のサーバーでも使う。"""
     token = get_access_token()
     if token is None:
         return "local"
-    if state.auth:
-        rows = state.auth.q("SELECT info FROM oauth_clients WHERE client_id=?", (token.client_id,))
+    if auth:
+        rows = auth.q("SELECT info FROM oauth_clients WHERE client_id=?", (token.client_id,))
         if rows:
             name = json.loads(rows[0]["info"]).get("client_name")
             if name:
