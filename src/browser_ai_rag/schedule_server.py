@@ -122,6 +122,8 @@ def _day(d: date) -> str:
 
 def _parse(text: str, weekday: str | None = None) -> int:
     """「2026-10-13 15:00」を受け取る。曜日も渡されたら、日付と合っているか確かめる。"""
+    if os.environ.get("SCHEDULE_LOG_ARGS") == "1":   # 実験のときだけ：AI が曜日を渡してきたかを記録する（架空のデータ）
+        logging.getLogger("schedule").info("日時: %s 曜日: %s", text, weekday)
     t = text.strip().replace("T", " ")
     try:
         d = datetime.strptime(t[:16], "%Y-%m-%d %H:%M").replace(tzinfo=_tz())
@@ -192,7 +194,7 @@ def _conflicts(people: list[str], start: int, end: int, me: str, skip_event: int
     out = []
     for p in people:
         for e in _busy(p, start, end, skip_event):
-            span = f"{_fmt(e['start'])[11:]}〜{_fmt(e['end'])[-5:]}"
+            span = f"{_fmt(e['start'])[-5:]}〜{_fmt(e['end'])[-5:]}"
             out.append(f"自分: {e['title']}（{span}）" if p == me else f"{_name(p)}: 予定あり（{span}）")
     return out
 

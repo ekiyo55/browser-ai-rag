@@ -43,7 +43,7 @@ async def test_wrong_weekday_is_rejected(who):
 async def test_conflict_hides_others_titles(who):
     r = await call("create_event", {"title": "相談", "start": "2026-10-06 14:00", "attendees": ["山田さん"]})
     text = r.content[0].text
-    assert r.is_error and "山田: 予定あり" in text and "ベータ工業" not in text      # 中身は見せない
+    assert r.is_error and "山田: 予定あり（14:00〜17:00）" in text and "ベータ工業" not in text   # 中身は見せない
     assert "自分: アルファ商会 打ち合わせ" not in text                               # 13〜14時なので重ならない
 
 
