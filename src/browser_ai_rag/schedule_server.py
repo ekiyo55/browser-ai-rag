@@ -40,6 +40,8 @@ from .timecard_server import _via_from
 INSTRUCTIONS = """利用者の予定とタスクを扱うサーバーです。
 「来週の火曜」のような言い方は、答えにある今日の日付と曜日をもとに、具体的な日付に直してから道具を呼んでください。
 利用者が曜日で言ったときは、weekday にその曜日も入れてください。日付と合わなければサーバーが断ります。
+利用者の言った日付と曜日が食い違っていたら、どちらかを自分で選ばず、利用者にどちらが正しいか聞いてください。
+「今日やることは？」には today_overview を使い、予定とタスクの両方を答えてください。
 予定を入れる・動かす前に、日時と参加者を利用者に確かめてください。ほかの人の予定は、空いているかどうかしか見られません。"""
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
