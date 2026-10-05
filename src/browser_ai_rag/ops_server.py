@@ -106,7 +106,7 @@ class SystemdBackend:
         self.helper = helper
 
     def unit_state(self, unit: str) -> dict:
-        out = subprocess.run(["systemctl", "show", unit, "--property=ActiveState,SubState,ActiveEnterTimestamp,"
+        out = subprocess.run(["systemctl", "show", unit, "--timestamp=unix", "--property=ActiveState,SubState,ActiveEnterTimestamp,"
                               "MemoryCurrent,NRestarts,InactiveEnterTimestamp,Result"], capture_output=True, text=True, timeout=5).stdout
         return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
 
@@ -185,6 +185,11 @@ def _service(key: str) -> Service:
     raise ToolError(f"「{key}」というサービスはありません。使える名前: " + "、".join(f"{s.key}（{s.label}）" for s in SERVICES))
 
 
+def _epoch(value: str | None) -> float | None:
+    """systemctl show --timestamp=unix の「@1759645853」を秒に直す。"""
+    return float(value[1:]) if value and value.startswith("@") and value[1:].isdigit() else None
+
+
 def _when(ts: float) -> str:
     return datetime.fromtimestamp(ts).astimezone().strftime("%Y-%m-%d %H:%M")
 
@@ -256,12 +261,18 @@ def _state_of(s: Service) -> ServiceState:
     u = state.backend.unit_state(s.unit)
     code, ms = state.backend.probe(s.port, s.path)
     mem = u.get("MemoryCurrent", "")
-    since = u.get("ActiveEnterTimestamp") or None
     running = u.get("ActiveState") == "active"
+    started, stopped = _epoch(u.get("ActiveEnterTimestamp")), _epoch(u.get("InactiveEnterTimestamp"))
+    reason = None
+    if not running:
+        reason = STOP_REASONS.get(u.get("Result", ""), u.get("Result") or None)
+        if u.get("Result") == "success" and stopped and state.clock() - stopped > 60:
+            # 再起動の途中なら数秒で起き上がる。1分以上止まったままなら、誰かが止めたと見てよい（実機で取り違えた）
+            reason = (f"正常に止められ、そのまま {int((state.clock() - stopped) // 60)} 分止まっている。"
+                      "再起動の途中ではなく、誰かが止めた可能性が高い（誰が止めたかは、この道具ではわからない）")
     return ServiceState(key=s.key, label=s.label, running=running,
-                        answering=code == 200, since=since if running else None, response_ms=ms,
-                        stopped_at=None if running else (u.get("InactiveEnterTimestamp") or None),
-                        stop_reason=None if running else STOP_REASONS.get(u.get("Result", ""), u.get("Result") or None),
+                        answering=code == 200, since=_when(started) if running and started else None, response_ms=ms,
+                        stopped_at=_when(stopped) if not running and stopped else None, stop_reason=reason,
                         memory_mb=int(mem) // (1024 * 1024) if mem.isdigit() else None,
                         restarts=int(u["NRestarts"]) if u.get("NRestarts", "").isdigit() else None)
 

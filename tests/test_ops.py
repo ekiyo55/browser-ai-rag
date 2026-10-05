@@ -1,5 +1,7 @@
 """運用の窓口（第28章）。サーバーを触る部分は偽物に差し替えて確かめる。"""
 
+import time
+
 import pytest
 from mcp import Client
 
@@ -8,6 +10,7 @@ from browser_ai_rag.config import Settings
 from browser_ai_rag.ops_server import OpsSettings, configure, create_ops_server, redact
 
 pytestmark = pytest.mark.anyio
+STOPPED = int(time.time()) - 3 * 3600   # 3時間前に止まったことにする
 
 
 class FakeBackend:
@@ -18,8 +21,8 @@ class FakeBackend:
     def unit_state(self, unit):
         if unit in self.down:
             return {"ActiveState": "inactive", "SubState": "dead", "NRestarts": "0", "Result": "success",
-                    "InactiveEnterTimestamp": "Mon 2026-10-05 10:29:07 JST"}
-        return {"ActiveState": "active", "SubState": "running", "ActiveEnterTimestamp": "Mon 2026-10-05 09:00:00 JST",
+                    "InactiveEnterTimestamp": f"@{STOPPED}"}
+        return {"ActiveState": "active", "SubState": "running", "ActiveEnterTimestamp": f"@{STOPPED - 3600}",
                 "MemoryCurrent": str(80 * 1024 * 1024), "NRestarts": "0"}
 
     def probe(self, port, path):
@@ -40,7 +43,7 @@ class FakeBackend:
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     fake = FakeBackend()
-    configure(Settings(data_dir=tmp_path), OpsSettings(admins=["kanri"]), backend=fake)
+    configure(Settings(data_dir=tmp_path), OpsSettings(admins=["kanri"]), backend=fake, clock=lambda: STOPPED + 75 * 60)
     ops.state.settle = 0
     who = {"name": "eto"}
     monkeypatch.setattr(ops, "current_user", lambda: who["name"])
@@ -57,7 +60,8 @@ async def test_status_finds_the_stopped_one(env):
     assert ans["all_ok"] is False
     count = next(s for s in ans["services"] if s["key"] == "count")
     assert count["running"] is False and count["answering"] is False
-    assert count["stopped_at"].endswith("10:29:07 JST") and count["stop_reason"].startswith("正常に止められた")  # 落ちたのではない
+    assert count["stopped_at"] == ops._when(STOPPED)
+    assert "75 分止まっている" in count["stop_reason"] and "誰かが止めた可能性が高い" in count["stop_reason"]  # 落ちたのでも、再起動の途中でもない
 
 
 async def test_errors_and_restart_are_admin_only(env):
