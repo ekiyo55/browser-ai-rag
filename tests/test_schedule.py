@@ -88,3 +88,11 @@ async def test_tasks(who):
 async def test_past_time_is_rejected(who):
     r = await call("create_event", {"title": "朝会", "start": "2026-10-05 08:00"})
     assert r.is_error and "過ぎた時刻" in r.content[0].text
+
+
+async def test_today_overview_has_events_and_tasks(who):
+    """「今日やることは？」に、予定とタスクの両方で答えられる（実機ではタスクだけを答えた）。"""
+    ans = (await call("today_overview")).structured_content
+    assert [e["title"] for e in ans["events"]] == ["営業定例"] and ans["finished"] == []
+    assert [t["title"] for t in ans["tasks_overdue"]] == ["9月の営業報告を出す"]
+    assert [t["title"] for t in ans["tasks_due_soon"]] == ["アルファ商会に見積書を送る"]

@@ -402,6 +402,31 @@ def cancel_event(
     return f"予定 {event_id}（{r['title']}、{_fmt(r['start'])}）を取り消しました。参加者の予定表からも消えます。"
 
 
+class Today(BaseModel):
+    viewer: str
+    now: str
+    events: list[Event] = Field(description="今日の予定（終わったものも含む。done=終わった）")
+    finished: list[int] = Field(description="もう終わった予定の event_id")
+    tasks_overdue: list[Task]
+    tasks_due_soon: list[Task] = Field(description="今日から3日以内が期限のタスク")
+
+
+@tool("今日の予定とタスク", READ_ONLY)
+def today_overview() -> Today:
+    """「今日やることは？」に答えるための道具。今日の予定と、期限切れ・期限の近いタスクをまとめて返す。"""
+    me = _me()
+    now = _now()
+    lo = int(datetime.combine(now.date(), datetime.min.time(), _tz()).timestamp())
+    rows = _busy(me, lo, lo + 86400)
+    tasks = [_task(r) for r in state.db.execute(
+        "SELECT * FROM tasks WHERE owner=? AND done_at IS NULL AND due IS NOT NULL ORDER BY due", (me,))]
+    soon = (now.date() + timedelta(days=3))
+    return Today(viewer=_name(me), now=_fmt(int(now.timestamp())), events=[_event(r, me) for r in rows],
+                 finished=[r["id"] for r in rows if r["end"] <= now.timestamp()],
+                 tasks_overdue=[t for t in tasks if t.overdue],
+                 tasks_due_soon=[t for t in tasks if not t.overdue and t.due and date.fromisoformat(t.due[:10]) <= soon])
+
+
 # ---------------------------------------------------------------- タスクの道具
 
 
