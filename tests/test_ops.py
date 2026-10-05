@@ -17,7 +17,8 @@ class FakeBackend:
 
     def unit_state(self, unit):
         if unit in self.down:
-            return {"ActiveState": "failed", "SubState": "failed", "NRestarts": "3"}
+            return {"ActiveState": "inactive", "SubState": "dead", "NRestarts": "0", "Result": "success",
+                    "InactiveEnterTimestamp": "Mon 2026-10-05 10:29:07 JST"}
         return {"ActiveState": "active", "SubState": "running", "ActiveEnterTimestamp": "Mon 2026-10-05 09:00:00 JST",
                 "MemoryCurrent": str(80 * 1024 * 1024), "NRestarts": "0"}
 
@@ -25,7 +26,8 @@ class FakeBackend:
         return (None, 3) if port == 8703 and "mooma-book-count" in self.down else (200, 2)
 
     def logs(self, unit, minutes):
-        return ("10:00 POST /count/mcp 200 3ms from=1.33.51.128\n"
+        return ("09:58 systemd[1]: Stopped mooma-book-count.service - Book sample counting MCP server.\n"
+                "10:00 POST /count/mcp 200 3ms from=1.33.51.128\n"
                 "10:01 Tool 'sales_summary' failed: token=abcd1234 from 9.129.57.3\n"
                 "10:02 Traceback (most recent call last):\n")
 
@@ -55,6 +57,7 @@ async def test_status_finds_the_stopped_one(env):
     assert ans["all_ok"] is False
     count = next(s for s in ans["services"] if s["key"] == "count")
     assert count["running"] is False and count["answering"] is False
+    assert count["stopped_at"].endswith("10:29:07 JST") and count["stop_reason"].startswith("正常に止められた")  # 落ちたのではない
 
 
 async def test_errors_and_restart_are_admin_only(env):
@@ -70,7 +73,7 @@ async def test_errors_are_redacted(env):
     ans = (await call("recent_errors", {"service": "売上・案件"})).structured_content
     text = "\n".join(ans["lines"])
     assert "1.33.51.128" not in text and "9.129.57.3" not in text and "abcd1234" not in text
-    assert len(ans["lines"]) == 2                                   # 200 の行はエラーではない
+    assert len(ans["lines"]) == 3 and "Stopped" in ans["lines"][0]  # 停止の記録は拾い、200 の行は拾わない
 
 
 async def test_restart_once_per_ten_minutes(env):

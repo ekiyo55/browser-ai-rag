@@ -55,7 +55,11 @@ RESTART = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHi
 
 COOLDOWN = 10 * 60
 LOG_LINES = 30
-ERROR_WORDS = re.compile(r"failed|error|traceback|exception|warning|critical| 5\d\d ", re.I)
+ERROR_WORDS = re.compile(r"failed|error|traceback|exception|warning|critical| 5\d\d "
+                         r"|stopping|stopped|started|deactivated|main process exited|killed", re.I)  # 起動・停止の記録も拾う
+STOP_REASONS = {"success": "正常に止められた（誰かが止めたか、再起動の途中）", "exit-code": "プログラムが異常終了した",
+                "signal": "シグナルで強制終了された", "core-dump": "プログラムが落ちた（コアダンプ）",
+                "timeout": "起動か停止が時間切れになった", "oom-kill": "メモリ不足で止められた"}
 
 
 class Service(BaseModel):
@@ -103,7 +107,7 @@ class SystemdBackend:
 
     def unit_state(self, unit: str) -> dict:
         out = subprocess.run(["systemctl", "show", unit, "--property=ActiveState,SubState,ActiveEnterTimestamp,"
-                              "MemoryCurrent,NRestarts"], capture_output=True, text=True, timeout=5).stdout
+                              "MemoryCurrent,NRestarts,InactiveEnterTimestamp,Result"], capture_output=True, text=True, timeout=5).stdout
         return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
 
     def probe(self, port: int, path: str) -> tuple[int | None, int]:
@@ -203,6 +207,8 @@ class ServiceState(BaseModel):
     since: str | None = Field(description="今の起動の時刻")
     memory_mb: int | None
     restarts: int | None = Field(description="systemd が自動で起こし直した回数")
+    stopped_at: str | None = Field(default=None, description="止まっているとき、止まった時刻")
+    stop_reason: str | None = Field(default=None, description="止まっているとき、止まり方（systemd の記録から）")
     response_ms: int
 
 
@@ -251,8 +257,11 @@ def _state_of(s: Service) -> ServiceState:
     code, ms = state.backend.probe(s.port, s.path)
     mem = u.get("MemoryCurrent", "")
     since = u.get("ActiveEnterTimestamp") or None
-    return ServiceState(key=s.key, label=s.label, running=u.get("ActiveState") == "active",
-                        answering=code == 200, since=since, response_ms=ms,
+    running = u.get("ActiveState") == "active"
+    return ServiceState(key=s.key, label=s.label, running=running,
+                        answering=code == 200, since=since if running else None, response_ms=ms,
+                        stopped_at=None if running else (u.get("InactiveEnterTimestamp") or None),
+                        stop_reason=None if running else STOP_REASONS.get(u.get("Result", ""), u.get("Result") or None),
                         memory_mb=int(mem) // (1024 * 1024) if mem.isdigit() else None,
                         restarts=int(u["NRestarts"]) if u.get("NRestarts", "").isdigit() else None)
 
