@@ -1,0 +1,29 @@
+#!/bin/bash
+# 運用の窓口（第28章）の手伝い。root で動くので、できることを二つだけに絞る。
+#   book-ops logs <unit> <分>     そのサービスの最近のログ（最大500行）
+#   book-ops restart <unit>       そのサービスを再起動する
+# 置き場所: /usr/local/sbin/book-ops（root 所有・755）
+# sudoers:  www-data ALL=(root) NOPASSWD: /usr/local/sbin/book-ops
+set -euo pipefail
+ALLOWED="mooma-book mooma-book-mail mooma-book-timecard mooma-book-count mooma-book-schedule mooma-book-ops"
+RESTARTABLE="mooma-book mooma-book-mail mooma-book-timecard mooma-book-count mooma-book-schedule"
+
+cmd="${1:-}"; unit="${2:-}"
+in_list() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+in_list "$unit" "$ALLOWED" || { echo "このサービスは扱えません: $unit" >&2; exit 2; }
+
+case "$cmd" in
+  logs)
+    minutes="${3:-60}"
+    [[ "$minutes" =~ ^[0-9]{1,4}$ ]] || { echo "分は数字で指定してください" >&2; exit 2; }
+    exec journalctl -u "$unit" --since "-${minutes}min" -n 500 --no-pager -o short-iso
+    ;;
+  restart)
+    in_list "$unit" "$RESTARTABLE" || { echo "このサービスは再起動できません: $unit" >&2; exit 2; }
+    exec systemctl restart "$unit"
+    ;;
+  *)
+    echo "使い方: book-ops logs <unit> <分> | book-ops restart <unit>" >&2; exit 2
+    ;;
+esac
