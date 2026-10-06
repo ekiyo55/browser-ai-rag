@@ -1,7 +1,7 @@
 [project]
 name = "browser-ai-rag"
 version = "0.1.0"
-description = "『ブラウザのAIが社内で働きだす ― MCPで作る文書検索・メール・勤怠』のサンプル"
+description = "『ブラウザのAIが社内で働きだす ― Claude・ChatGPTから使えるMCPサーバーの作り方』のサンプル"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
