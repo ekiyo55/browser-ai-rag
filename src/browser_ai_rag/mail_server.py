@@ -132,6 +132,14 @@ def _addr_set(addresses: list[str]) -> set[str]:
     return {parseaddr(a)[1].lower() for a in addresses if parseaddr(a)[1]}
 
 
+def _check_addresses(to: list[str]) -> None:
+    """宛先はメールアドレスに限る。名前だけの宛先（「山田」など）は、下書きにする前に断る（第29章、実機で起きた）。"""
+    bad = [a for a in to if "@" not in parseaddr(a)[1]]
+    if bad:
+        raise ToolError(f"宛先「{'、'.join(bad)}」はメールアドレスではありません。"
+                        "名前しかわからないときは、アドレスを推測で作らず、利用者に聞いてください。")
+
+
 def _draft_view(row_id: int, to: list[str], subject: str, body: str) -> "Draft":
     blocked = recipients_allowed(to, state.mail.allowed_recipients)
     return Draft(draft_id=row_id, to=to, subject=subject, body=body, blocked=blocked,
@@ -240,6 +248,7 @@ def create_draft(
         in_reply_to = orig.message_id or None
     if not to:
         raise ToolError("宛先がありません。to か reply_to_message_id を指定してください。")
+    _check_addresses(to)
     subject = subject or "(件名なし)"
     with state.lock, state.db:
         cur = state.db.execute(
@@ -261,6 +270,7 @@ def update_draft(
     if row["sent_at"]:
         raise ToolError(f"下書き {draft_id} は送信済みなので直せません。")
     new_to = to if to is not None else json.loads(row["recipients"])
+    _check_addresses(new_to)
     new_subject, new_body = subject or row["subject"], body or row["body"]
     with state.lock, state.db:
         state.db.execute("UPDATE drafts SET recipients=?, subject=?, body=? WHERE id=?",

@@ -116,3 +116,10 @@ def test_auth_metadata_points_to_mail_path(tmp_path):
         meta = c.get("/.well-known/oauth-protected-resource/mail/mcp", headers={"Host": "book.example.com"}).json()
         assert meta["resource"] == "https://book.example.com/mail/mcp"
         assert meta["authorization_servers"] == ["https://book.example.com"]
+
+
+async def test_name_only_recipient_is_refused(mail):
+    """「山田」のような名前だけの宛先では、下書きを作らない（実機で、送れない下書きができた）。"""
+    async with Client(create_mail_server(mail[0])) as c:
+        r = await c.call_tool("create_draft", {"to": ["山田"], "subject": "定例の時間", "body": "14時にできますか"})
+        assert r.is_error and "メールアドレスではありません" in r.content[0].text
