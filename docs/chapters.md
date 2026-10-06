@@ -28,7 +28,7 @@ git checkout ch05
 | 26 数える道具 | `ch26` | `count_server.py`（`/count/mcp`）・`sales_data.py`（架空の売上と案件）。決まった道具4つ（COUNT_MODE=tools）と、比べるための SQL を書かせる実験（COUNT_MODE=sql、読むだけ）。記録のない期間は0円と区別 | できた |
 | 27 予定とタスク | `ch27` | `schedule_server.py`（`/schedule/mcp`、道具8つ）。曜日つきの日時と曜日の照合、重なりの確認、ほかの人は空きだけ、動かすのは主催者だけ | できた |
 | 28 運用の窓口 | `ch28` | `ops_server.py`（`/ops/mcp`、道具5つ）・`deploy/book-ops`（root で動く手伝い、sudoers で www-data に許す）。稼働状況と具合は誰でも、エラーと再起動は管理者だけ、再起動は10分に1回・理由を記録、ログは IP と合鍵を伏せる | できた |
-| 29 サーバーを並べる | `ch29` | 認証の共通化（`common/`）、道具の数の予算 | |
+| 29 サーバーを並べる | `ch29` | `combined_server.py`（`/all/mcp`、六本の道具37個を一本に。名前がぶつかったら止める）・`tools/tool_budget.py`（道具の一覧のトークン数）。ログインは `SharedTokenVerifier` で共通 | できた |
 | 30〜33 チームで使う | `ch30`〜`ch33` | SharePoint、組織プラン、Entra ID、運用と安全 | |
 
 第1〜4章と第11章は考え方の章なので、コードはありません。第12〜16章は一つの作業としてまとめて作ったので、タグは `ch16` だけです。
